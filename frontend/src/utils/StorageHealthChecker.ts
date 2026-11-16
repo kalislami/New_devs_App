@@ -543,7 +543,7 @@ export class StorageHealthChecker {
         if (!value) continue;
         
         const parsed = JSON.parse(value);
-        if (parsed.expires_at && now > parsed.expires_at) {
+        if (parsed.data !== undefined && parsed.timestamp !== undefined && parsed.expires_at && now > parsed.expires_at) {
           expiredKeys.push(key);
         }
       } catch (error) {
@@ -598,7 +598,7 @@ export class StorageHealthChecker {
           }
           
           // Check if expired
-          if (parsed.expires_at && now > parsed.expires_at) {
+          if (parsed.data !== undefined && parsed.timestamp !== undefined && parsed.expires_at && now > parsed.expires_at) {
             expiredItems++;
           }
         }

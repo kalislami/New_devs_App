@@ -11,6 +11,7 @@
 
 import { supabase } from './supabase';
 import { sessionManager } from '../utils/sessionManager';
+import { decodeJWTPayload } from '../utils/jwtUtils';
 import { withRetry, handleApiError, classifyError } from '../utils/apiErrorHandler';
 
 // Get backend URL with fallback for misconfigured production environments
@@ -185,12 +186,12 @@ export class SecureAPIClient {
         }
         // Check if it's a valid JWT
         else if (token.includes('.') && token.split('.').length === 3) {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
+          const payload = decodeJWTPayload(token);
+          extractedTenantId = payload?.app_metadata?.tenant_id || payload?.tenant_id;
         }
 
         if (extractedTenantId) {
-          // Validate tenant ID format (should be UUID)
+          // Validate a nonempty tenant cache partition
           if (this.isValidTenantId(extractedTenantId)) {
             this.cachedTenantId = extractedTenantId;
             return this.cachedTenantId;
@@ -222,14 +223,14 @@ export class SecureAPIClient {
     try {
       const token = this.cachedToken;
       if (token) {
-        const payload = JSON.parse(atob(token.split('.')[1]));
+        const payload = decodeJWTPayload(token);
         // Use user sub (unique ID) + email as session key for isolation
-        const userSub = payload.sub;
-        const userEmail = payload.email;
+        const userSub = payload?.sub || payload?.id;
+        const userEmail = payload?.email;
 
         if (userSub && userEmail) {
           // Create short hash to avoid very long cache keys
-          const sessionKey = `${userSub.substring(0, 8)}-${userEmail.split('@')[0]}`;
+          const sessionKey = `${userSub}:${userEmail}`;
           return sessionKey;
         }
       }
@@ -243,9 +244,9 @@ export class SecureAPIClient {
    * Validate tenant ID format for security
    */
   private isValidTenantId(tenantId: string): boolean {
-    // Check for UUID format (basic validation)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return typeof tenantId === 'string' && tenantId.length > 0 && uuidRegex.test(tenantId);
+    // Tenant IDs are TEXT in this schema (including tenant-a and tenant-b).
+    // This is a cache partition only; authorization is enforced by the backend.
+    return typeof tenantId === 'string' && tenantId.trim().length > 0;
   }
 
   /**
@@ -1449,23 +1450,17 @@ export class SecureAPIClient {
   }
 
   // ============= DASHBOARD API =============
-  /**
-   * Get dashboard summary with optional simulation header
-   */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
-    const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
-    }
+  async getDashboardProperties() {
+    // Revenue uses the server cache; avoid browser reuse across account switches.
+    return this.executeRequest<Array<{ id: string; name: string; timezone: string }>>(
+      '/api/v1/dashboard/properties', {}, null, false);
+  }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+  async getDashboardSummary(propertyId: string, options?: { month?: number; year?: number }) {
+    const params = new URLSearchParams({ property_id: propertyId });
+    if (options?.month !== undefined) params.set('month', String(options.month));
+    if (options?.year !== undefined) params.set('year', String(options.year));
+    return this.executeRequest<any>(`/api/v1/dashboard/summary?${params}`, {}, null, false);
   }
 
   async uploadCompanyLogo(logo_url: string) {

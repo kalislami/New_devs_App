@@ -41,7 +41,9 @@ class LocalStorageManager {
    */
   private initialize(): void {
     try {
-      const storedVersion = localStorage.getItem(STORAGE_VERSION_KEY);
+      const rawVersion = localStorage.getItem(STORAGE_VERSION_KEY);
+      let storedVersion = rawVersion;
+      try { storedVersion = rawVersion ? JSON.parse(rawVersion) : null; } catch { /* legacy plain string */ }
       
       if (!storedVersion || storedVersion !== CURRENT_VERSION) {
         console.log(`LocalStorage version mismatch. Current: ${CURRENT_VERSION}, Stored: ${storedVersion}`);
@@ -49,7 +51,7 @@ class LocalStorageManager {
       }
       
       // Set current version
-      localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION);
+      localStorage.setItem(STORAGE_VERSION_KEY, JSON.stringify(CURRENT_VERSION));
     } catch (error) {
       console.error('Failed to initialize localStorage:', error);
       this.clearCorruptedStorage();
@@ -113,7 +115,7 @@ class LocalStorageManager {
       
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.includes('supabase') || key.includes('sb-'))) {
+        if (key && (key === 'base360-auth-token' || key.includes('supabase') || key.includes('sb-'))) {
           const value = localStorage.getItem(key);
           if (value) {
             preservedData[key] = value;
@@ -239,7 +241,7 @@ class LocalStorageManager {
     
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.includes('supabase') || key.includes('sb-'))) {
+      if (key && (key === 'base360-auth-token' || key.includes('supabase') || key.includes('sb-'))) {
         const value = localStorage.getItem(key);
         if (value) {
           preservedData[key] = value;
@@ -272,7 +274,7 @@ class LocalStorageManager {
     console.warn('Clearing corrupted localStorage');
     try {
       localStorage.clear();
-      localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION);
+      localStorage.setItem(STORAGE_VERSION_KEY, JSON.stringify(CURRENT_VERSION));
     } catch (error) {
       console.error('Failed to clear corrupted storage:', error);
     }
@@ -355,7 +357,7 @@ class LocalStorageManager {
   forceReset(): void {
     console.warn('[LocalStorageManager] DEPRECATED: forceReset() - Use storageManager.clearAll() instead');
     storageManager.clearAll();
-    localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION);
+    localStorage.setItem(STORAGE_VERSION_KEY, JSON.stringify(CURRENT_VERSION));
     window.location.reload();
   }
 

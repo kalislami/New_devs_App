@@ -462,7 +462,7 @@ export class StorageManager {
         if (!value) continue;
         
         const item = JSON.parse(value);
-        if (item.expires_at && now > item.expires_at) {
+        if (item.data !== undefined && item.timestamp !== undefined && item.expires_at && now > item.expires_at) {
           keysToRemove.push(key);
         }
       } catch (e) {

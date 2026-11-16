@@ -7,7 +7,7 @@ from ...models.auth import Permission
 import logging
 import hashlib
 from datetime import datetime, timedelta
-import jwt
+from jose import jwt
 from ...config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,7 +35,7 @@ async def login(request: LoginRequest):
     """Login endpoint for local authentication"""
     try:
         email = request.email.lower().strip()
-        password = request.password.strip()
+        password = request.password
         
         logger.info(f"[LOGIN] Attempting login for: {email}")
         
@@ -46,6 +46,8 @@ async def login(request: LoginRequest):
             # Create mock JWT token
             user_data = {
                 "id": "user-sunset",
+                "sub": "user-sunset",
+                "tenant_id": "tenant-a",
                 "email": "sunset@propertyflow.com",
                 "app_metadata": {"role": "user", "tenant_id": "tenant-a"},
                 "user_metadata": {"name": "Sunset Properties Manager"},
@@ -76,6 +78,8 @@ async def login(request: LoginRequest):
             # Create mock JWT token
             user_data = {
                 "id": "user-ocean",
+                "sub": "user-ocean",
+                "tenant_id": "tenant-b",
                 "email": "ocean@propertyflow.com",
                 "app_metadata": {"role": "user", "tenant_id": "tenant-b"},
                 "user_metadata": {"name": "Ocean Rentals Manager"},
@@ -102,16 +106,13 @@ async def login(request: LoginRequest):
         # For other users, check if they exist in the database
         # This is a simplified auth - in production you'd check password hashes
         try:
-            # Check if user exists in Supabase auth
-            user_result = supabase.auth.admin.list_users()
-            users = user_result if hasattr(user_result, '__iter__') else []
-            
-            user = None
-            for u in users:
-                if u.email and u.email.lower() == email:
-                    user = u
-                    break
-                    
+            # Authenticate the password instead of accepting any listed email.
+            try:
+                result = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                user = result.user
+            except Exception:
+                user = None
+
             if not user:
                 logger.warning(f"[LOGIN] User not found: {email}")
                 raise HTTPException(
@@ -144,11 +145,13 @@ async def login(request: LoginRequest):
             )
             
             # Resolve tenant ID
-            tenant_id = await TenantResolver.resolve_tenant_id(user_id=user.id, user_email=user.email)
+            tenant_id = TenantResolver.resolve_tenant_from_user({"app_metadata": user.app_metadata})
             
             # Create JWT token
             user_data = {
                 "id": user.id,
+                "sub": user.id,
+                "app_metadata": {"tenant_id": tenant_id},
                 "email": user.email,
                 "is_admin": is_admin,
                 "tenant_id": tenant_id,

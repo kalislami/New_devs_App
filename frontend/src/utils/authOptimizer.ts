@@ -191,74 +191,14 @@ class AuthOptimizer {
    * Fetch session with timeout
    */
   private async fetchSessionWithTimeout(): Promise<any> {
-    if (typeof window !== 'undefined' && (window as any).__isLoggingOut) {
-      console.log('[AuthOptimizer] Skipping fetchSessionWithTimeout - logout in progress');
-      return null;
-    }
-
-    const timeoutPromise = new Promise<any>((resolve) => {
-      setTimeout(() => {
-        console.warn('[AuthOptimizer] Session fetch timeout, using cached session if available');
-        resolve(this.cachedSession);
-      }, this.REQUEST_TIMEOUT_MS);
-    });
-    
-    const fetchPromise = (async () => {
-      console.log('[AuthOptimizer] Fetching session...');
-      const startTime = Date.now();
-      
-      try {
-        // Add a small delay ONLY if this is the first attempt (no cached session)
-        if (!this.cachedSession && typeof window !== 'undefined') {
-          // Check if Supabase has a session in storage that needs to be loaded
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const storageKey = `sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`;
-          const hasStoredSession = localStorage.getItem(storageKey);
-          
-          if (hasStoredSession) {
-            console.log('[AuthOptimizer] Found stored session, waiting for Supabase to initialize...');
-            // Give Supabase 100ms to initialize and load the session
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-        }
-        
-        // First try quick check
-        const { quickSessionCheck } = await import('./quickSessionCheck');
-        const quickCheck = await quickSessionCheck();
-        
-        if (quickCheck.hasSession && quickCheck.session) {
-          const elapsed = Date.now() - startTime;
-          console.log(`[AuthOptimizer] Session found via quick check in ${elapsed}ms`);
-          // Set token immediately for subsequent API calls
-          SecureAPI.setAccessToken(quickCheck.session.access_token);
-          return quickCheck.session;
-        }
-        
-        // Fall back to session recovery if no quick session
-        const session = await sessionRecovery.recoverSession();
-        
-        const elapsed = Date.now() - startTime;
-        
-        if (session) {
-          console.log(`[AuthOptimizer] Session recovered successfully in ${elapsed}ms`);
-          // Set token immediately for subsequent API calls
-          SecureAPI.setAccessToken(session.access_token);
-          return session;
-        }
-        
-        // If no session found, don't try again - user is not logged in
-        console.log(`[AuthOptimizer] No session found after ${elapsed}ms - user may not be logged in`);
-        return null;
-        
-      } catch (error) {
-        console.error('[AuthOptimizer] Session fetch failed:', error);
-        return this.cachedSession; // Return cached session on error
-      }
-    })();
-    
-    return await Promise.race([fetchPromise, timeoutPromise]);
+    if ((window as any).__isLoggingOut) return null;
+    // The local auth client validates the persisted token through /auth/me.
+    // Supabase storage keys and its recovery protocol do not apply here.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) SecureAPI.setAccessToken(session.access_token);
+    return session;
   }
-  
+
   /**
    * Fetch bootstrap data with timeout
    */

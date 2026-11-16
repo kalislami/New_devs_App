@@ -16,6 +16,7 @@ interface AuthSession {
   user: AuthUser;
   token_type: string;
   expires_in?: number;
+  expires_at?: number;
 }
 
 interface AuthResponse {
@@ -102,6 +103,8 @@ class LocalAuthClient {
         user: data.user,
       };
 
+      const claims = JSON.parse(atob(data.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      session.expires_at = claims.exp;
       this.saveSession(session);
 
       return {
